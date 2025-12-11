@@ -1,45 +1,81 @@
 import streamlit as st
-from app import load_pdf, chunk_text, build_or_load_vectorstores, hybrid_evaluate
+from app import load_pdf, chunk_text, build_or_load_vectorstores, chain
 
-# Load and prepare data once
-@st.cache_resource
-def init_system():
-    pdf_path = "subject_book.pdf"   # Make sure this file exists in your folder
-    st.info("📖 Loading subject book...")
+# ---------------------------
+# Wrapper to use your new chain
+# ---------------------------
+def run_hybrid_evaluation(question, answer, subject, semantic_store, keyword_store):
+    result = chain.invoke({
+        "question": question,
+        "answer": answer,
+        "subject": subject,
+        "semantic_store": semantic_store,
+        "keyword_store": keyword_store
+    })
+    return result
+
+
+# ---------------------------
+# Available Subjects
+# ---------------------------
+subject_books = {
+    "Software Engineering": "subject_book.pdf",
+    "Object Oriented Programming": "OOP_book.pdf",
+}
+
+# ---------------------------
+# Cache Loading + Vectorstores
+# ---------------------------
+@st.cache_resource(show_spinner=False)
+def init_subject(subject):
+    pdf_path = subject_books[subject]
+    st.info(f"📖 Loading {subject} textbook...")
     raw_text = load_pdf(pdf_path)
-    chunks = chunk_text(raw_text)
-    st.success("✅ Book loaded and chunked.")
 
-    st.info("📦 Initializing vectorstores...")
-    semantic_store, keyword_store = build_or_load_vectorstores(chunks)
-    st.success("✅ Vectorstores ready.")
+    chunks = chunk_text(raw_text)
+    st.success(f"✅ {subject} book loaded and chunked.")
+
+    st.info("📦 Building vectorstores (semantic + keyword)...")
+    semantic_store, keyword_store = build_or_load_vectorstores(chunks, subject)
+    st.success(f"✅ Vectorstores for {subject} ready.")
+
     return semantic_store, keyword_store
 
 
-semantic_store, keyword_store = init_system()
+# ---------------------------
+# Streamlit UI
+# ---------------------------
+st.set_page_config(page_title="Hybrid Grader", page_icon="📘", layout="centered")
 
-# Streamlit UI config
-st.set_page_config(page_title="Automatic Answer Grader", page_icon="📊", layout="centered")
+st.title("📊 Teacher Grading Companion")
+st.markdown("Grade student answers intelligently using a **Hybrid RAG Model** with textbook references.")
 
-st.title("📊 Teacher Grading Companion ")
-st.markdown("This app uses a **RAG model** to grade student answers with reference to the textbook.")
+subject = st.sidebar.selectbox("📚 Select Subject", options=list(subject_books.keys()))
+semantic_store, keyword_store = init_subject(subject)
 
-# Inputs
+st.subheader("🧾 Student Answer Evaluation")
 question = st.text_area("✍️ Enter the Question:", height=120)
 student_answer = st.text_area("📝 Enter the Student's Answer:", height=180)
 
-# Button action
-if st.button("🚀 Grade Answer"):
+if st.button("🚀 Evaluate Answer"):
     if not question.strip() or not student_answer.strip():
-        st.warning("⚠️ Please provide both a question and an answer.")
+        st.warning("⚠️ Please provide both the question and the student's answer.")
     else:
-        with st.spinner("Evaluating... Please wait."):
-            result = hybrid_evaluate(question, student_answer, semantic_store, keyword_store)
+        with st.spinner(f"Evaluating answer for {subject}..."):
+            result = run_hybrid_evaluation(
+                question, student_answer, subject,
+                semantic_store, keyword_store
+            )
 
         st.subheader("✅ Evaluation Result")
-        st.write(f"**LLM Score:** {result['llm_score']}/10")
-        st.write(f"**Similarity Score:** {result['similarity_score']}/10")
-        st.write(f"**Keyword Score:** {result['keyword_score']}/10")
-        st.write(f"**Final Score:** {result['final_score']}/10")
-        st.write(f"**Accuracy:** {result['accuracy']}%")
-        st.markdown(f"**💡 Feedback:** {result['feedback']}")
+        st.metric("LLM Score", f"{result['llm_score']}/10")
+        st.metric("Similarity Score", f"{result['similarity_score']}/10")
+        st.metric("Keyword Score", f"{result['keyword_score']}/10")
+
+        st.markdown(f"### **Final Score: {result['final_score']}/10**")
+        st.progress(min(result["final_score"] / 10, 1.0))
+
+        st.markdown(f"**Accuracy:** {result['accuracy']}%")
+        st.markdown(f"💡 **Feedback:** {result['feedback']}")
+
+st.markdown("---")
