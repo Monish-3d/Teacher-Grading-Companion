@@ -4,3 +4,7 @@ __pycache__/
 .ipynb_checkpoints/
 subject_book.pdf
 OOP_book.pdf
+uploads/
+subjects.json
+*.png
+*.pdf

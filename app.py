@@ -263,13 +263,75 @@ def postprocess(inputs):
 
 chain = RunnableSequence(RunnablePassthrough() , RunnableLambda(retrieve_context), RunnableLambda(llm_grade),RunnableLambda(postprocess))
 
+#--------------------------------------------------------------------------------
+
+import base64
+
+def extract_student_answers(pdf_path):
+    import base64
+    
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    encoded_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    extraction_prompt = """
+    You are an OCR + understanding AI.
+    Read this student answer sheet and extract ALL question–answer pairs.
+
+    RETURN STRICT JSON (NO MARKDOWN, NO EXTRA TEXT):
+    {
+        "qa_pairs": [
+            {"question": "text", "answer": "text"}
+        ]
+    }
+    """
+
+    result = llm.invoke(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": extraction_prompt},
+                    {
+                        "type": "media",
+                        "mime_type": "application/pdf",
+                        "data": encoded_pdf
+                    }
+                ]
+            }
+        ]
+    )
+
+    # ---------------- CLEAN JSON ----------------
+    raw = result.content.strip()
+
+    # If Gemini wrapped response in ```json ... ```
+    if raw.startswith("```"):
+        raw = raw.replace("```json", "").replace("```", "").strip()
+
+    # Debug print (optional)
+    # print("Cleaned JSON string:\n", raw)
+
+    # ---------------- PARSE JSON SAFELY ----------------
+    try:
+        data = json.loads(raw)
+        return data.get("qa_pairs", [])
+    except Exception as e:
+        print("❌ JSON parsing failed.")
+        print("Raw output:\n", raw)
+        raise e
+
 #----------------------main------------------------------------------------
+
 
 if __name__ == "__main__":
 
+    # ------------------------ SUBJECT BOOK SETUP ------------------------------------
+
     subject_pdf_map = {
-        "se" : "subject_book.pdf",
-        "oops" : "OOP_book.pdf"
+        "se": "subject_book.pdf",
+        "oops": "OOP_book.pdf"
     }
 
     subject = input("Enter subject (se / oops / etc): ").strip().lower()
@@ -279,63 +341,146 @@ if __name__ == "__main__":
 
     pdf_path = subject_pdf_map[subject]
 
-    #----------------------------------------------------------------------
-
-    # parallel_chain = RunnableParallel({
-    # 'context': RunnableLambda(build_or_load_vectorstores) | RunnableLambda(hybrid_retrieve),
-    # 'question': RunnablePassthrough(),
-    # 'answer' : RunnablePassthrough(),
-    # 'subject' : RunnablePassthrough()
-    # })
-
-    # final_chain = parallel_chain | prompt | llm | output_parser
-    #----------------------------------------------------------------------
-
-    print(f"📖 Loading {subject} book...")
+    print(f"\n📖 Loading {subject.upper()} book...")
     raw_text = load_pdf(pdf_path)
     chunks = chunk_text(raw_text)
 
     print("📦 Building / Loading Vectorstores...")
-    semantic_store, keyword_store = build_or_load_vectorstores(chunks , subject)
+    semantic_store, keyword_store = build_or_load_vectorstores(chunks, subject)
 
-    examples = [
-        {
-            "q": "What are objects in Object Oriented Programming",
-            "a": "Objects are the basic run-time entities in an object-oriented system.They may represent a person, a place, a bank account, a table of data or any item that the program has to handle. They may also represent user-defined data such as vectors, time and lists. Programming problem is analyzed in terms of objects and the nature of communication between them."
-        },
-        {
-            "q": "Explain the Waterfall model in software engineering.",
-            "a": "The Waterfall model is a linear approach where phases like requirements, design, implementation, and testing happen sequentially."
-        },
-        {
-            "q": "What is software testing?",
-            "a": "Software testing is the process of finding errors in the system and making sure it works as expected."
-        },
-        {
-            "q": "Define software engineering.",
-            "a": "It is the application of engineering principles to design, develop, and maintain software systems."
-        }
-    ]
+    # ------------------------ STUDENT PDF INPUT --6
+    # -----------------------------------
+    #student_pdf_path = input("\nEnter path to student answer sheet PDF: ").strip()
+    student_pdf_path = 'example_answer_sheet.pdf'
+    print("\n🔍 Extracting questions & answers from student sheet...")
+    qa_pairs = extract_student_answers(student_pdf_path)
 
-    for ex in examples:
-        print("\n" + "="*60)
-        print(f"📌 Question: {ex['q']}")
-        print(f"✍️ Student Answer: {ex['a']}")
+    if not qa_pairs:
+        print("\n❌ No question-answer pairs detected! Check PDF quality.")
+        exit()
+
+    print(f"\n✅ Extracted {len(qa_pairs)} question-answer pairs.\n")
+
+    # ------------------------ GRADE EACH PAIR ---------------------------------------
+
+    all_results = []
+
+    for i, qa in enumerate(qa_pairs, 1):
+
+        question = qa.get("question", "").strip()
+        answer = qa.get("answer", "").strip()
+
+        print("\n" + "="*80)
+        print(f"📝 Question {i}: {question}")
+        print(f"✍️ Student Answer:\n{answer}")
 
         result = chain.invoke({
-        "question": ex['q'],
-        "answer": ex['a'],
-        "subject": subject,
-        "semantic_store": semantic_store,
-        "keyword_store": keyword_store
+            "question": question,
+            "answer": answer,
+            "subject": subject,
+            "semantic_store": semantic_store,
+            "keyword_store": keyword_store
         })
 
-        #result = hybrid_evaluate(ex["q"], ex["a"] ,subject ,semantic_store, keyword_store)
+        print("\n🎯 Grading Result:")
+        print(f"LLM Score        : {result['llm_score']}/10")
+        print(f"Similarity Score : {result['similarity_score']}/10")
+        print(f"Keyword Score    : {result['keyword_score']}/10")
+        print(f"Final Score      : {result['final_score']}/10")
+        print(f"Accuracy         : {result['accuracy']}%")
+        print(f"Feedback         : {result['feedback']}\n")
 
-        print("\n✅ Hybrid Evaluation Result:")
-        print(f"LLM Score: {result['llm_score']}/10")
-        print(f"Similarity Score: {result['similarity_score']}/10")
-        print(f"Keyword Score: {result['keyword_score']}/10")
-        print(f"Final Score: {result['final_score']}/10")
-        print(f"Accuracy: {result['accuracy']}%")
-        print(f"Feedback: {result['feedback']}")
+        all_results.append({
+            "question": question,
+            "answer": answer,
+            **result
+        })
+
+    # ------------------------ SUMMARY OUTPUT ----------------------------------------
+
+    print("\n" + "="*80)
+    print("🏁 FINAL SUMMARY")
+    print("="*80)
+
+    for i, res in enumerate(all_results, 1):
+        print(f"\nQ{i}: {res['question']}")
+        print(f"Final Score: {res['final_score']}/10  |  Accuracy: {res['accuracy']}%")
+        print(f"Feedback: {res['feedback']}")
+
+    print("\n🎉 Grading complete!")
+
+
+# if __name__ == "__main__":
+
+#     subject_pdf_map = {
+#         "se" : "subject_book.pdf",
+#         "oops" : "OOP_book.pdf"
+#     }
+
+#     subject = input("Enter subject (se / oops / etc): ").strip().lower()
+
+#     if subject not in subject_pdf_map:
+#         raise ValueError(f"Invalid subject '{subject}'. Choose from: {list(subject_pdf_map.keys())}")
+
+#     pdf_path = subject_pdf_map[subject]
+
+#     #----------------------------------------------------------------------
+
+#     # parallel_chain = RunnableParallel({
+#     # 'context': RunnableLambda(build_or_load_vectorstores) | RunnableLambda(hybrid_retrieve),
+#     # 'question': RunnablePassthrough(),
+#     # 'answer' : RunnablePassthrough(),
+#     # 'subject' : RunnablePassthrough()
+#     # })
+
+#     # final_chain = parallel_chain | prompt | llm | output_parser
+#     #----------------------------------------------------------------------
+
+#     print(f"📖 Loading {subject} book...")
+#     raw_text = load_pdf(pdf_path)
+#     chunks = chunk_text(raw_text)
+
+#     print("📦 Building / Loading Vectorstores...")
+#     semantic_store, keyword_store = build_or_load_vectorstores(chunks , subject)
+
+#     examples = [
+#         {
+#             "q": "What are objects in Object Oriented Programming",
+#             "a": "Objects are the basic run-time entities in an object-oriented system.They may represent a person, a place, a bank account, a table of data or any item that the program has to handle. They may also represent user-defined data such as vectors, time and lists. Programming problem is analyzed in terms of objects and the nature of communication between them."
+#         },
+#         {
+#             "q": "Explain the Waterfall model in software engineering.",
+#             "a": "The Waterfall model is a linear approach where phases like requirements, design, implementation, and testing happen sequentially."
+#         },
+#         {
+#             "q": "What is software testing?",
+#             "a": "Software testing is the process of finding errors in the system and making sure it works as expected."
+#         },
+#         {
+#             "q": "Define software engineering.",
+#             "a": "It is the application of engineering principles to design, develop, and maintain software systems."
+#         }
+#     ]
+
+#     for ex in examples:
+#         print("\n" + "="*60)
+#         print(f"📌 Question: {ex['q']}")
+#         print(f"✍️ Student Answer: {ex['a']}")
+
+#         result = chain.invoke({
+#         "question": ex['q'],
+#         "answer": ex['a'],
+#         "subject": subject,
+#         "semantic_store": semantic_store,
+#         "keyword_store": keyword_store
+#         })
+
+#         #result = hybrid_evaluate(ex["q"], ex["a"] ,subject ,semantic_store, keyword_store)
+
+#         print("\n✅ Hybrid Evaluation Result:")
+#         print(f"LLM Score: {result['llm_score']}/10")
+#         print(f"Similarity Score: {result['similarity_score']}/10")
+#         print(f"Keyword Score: {result['keyword_score']}/10")
+#         print(f"Final Score: {result['final_score']}/10")
+#         print(f"Accuracy: {result['accuracy']}%")
+#         print(f"Feedback: {result['feedback']}")

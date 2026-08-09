@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marks-Grader · AI Grading Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- shared gradient defs for the score rings -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="gradWC" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ff7a59" />
+        <stop offset="100%" stop-color="#4c6ef5" />
+      </linearGradient>
+      <linearGradient id="gradCool" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#4c6ef5" />
+        <stop offset="100%" stop-color="#22b8cf" />
+      </linearGradient>
+      <linearGradient id="gradWarm" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ff7a59" />
+        <stop offset="100%" stop-color="#ffb347" />
+      </linearGradient>
+      <linearGradient id="gradMint" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#20c997" />
+        <stop offset="100%" stop-color="#38d9a9" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="aurora" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="brand">
+      <div class="brand-mark">◑</div>
+      <div class="brand-text">
+        <h1>Marks-Grader</h1>
+        <p>AI grading studio · grounded in your textbooks</p>
+      </div>
+    </div>
+    <div class="subject-picker" id="subjectPicker" role="group" aria-label="Subject">
+      <!-- subject pills injected here -->
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button class="tab is-active" data-tab="grade" role="tab">
+      <span class="tab-emoji">✍️</span> Grade Answer
+    </button>
+    <button class="tab" data-tab="sheet" role="tab">
+      <span class="tab-emoji">📄</span> Grade Sheet
+    </button>
+    <button class="tab" data-tab="mcq" role="tab">
+      <span class="tab-emoji">🧩</span> Create MCQs
+    </button>
+    <span class="tab-glow" id="tabGlow"></span>
+  </nav>
+
+  <main class="stage">
+
+    <!-- ============================ GRADE SINGLE ANSWER ============================ -->
+    <section class="panel is-active" data-panel="grade">
+      <div class="grid">
+        <div class="card input-card">
+          <h2 class="card-title">Evaluate a single answer</h2>
+          <p class="card-sub">Grade one question against textbook evidence with a blended score.</p>
+          <label class="field">
+            <span>Question</span>
+            <textarea id="g-question" rows="3" placeholder="e.g. Explain the Waterfall model in software engineering."></textarea>
+          </label>
+          <label class="field">
+            <span>Student answer</span>
+            <textarea id="g-answer" rows="6" placeholder="Paste the student's answer here…"></textarea>
+          </label>
+          <button class="btn-primary" id="g-run">
+            <span class="btn-label">Evaluate answer</span>
+            <span class="spinner" hidden></span>
+          </button>
+        </div>
+
+        <div class="card result-card" id="g-result">
+          <div class="placeholder">
+            <div class="placeholder-ring">◑</div>
+            <p>Your grade breakdown will appear here — final score, LLM rubric, similarity and keyword signals, plus written feedback.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ GRADE ANSWER SHEET ============================ -->
+    <section class="panel" data-panel="sheet">
+      <div class="grid">
+        <div class="card input-card">
+          <h2 class="card-title">Grade a full answer sheet</h2>
+          <p class="card-sub">Upload a scanned PDF. A multimodal model extracts every question–answer pair, then grades each one.</p>
+
+          <label class="dropzone" id="dropzone" for="s-file">
+            <input type="file" id="s-file" accept="application/pdf" hidden />
+            <div class="dropzone-inner">
+              <div class="dropzone-icon">⬆️</div>
+              <p class="dropzone-title" id="dropzone-title">Drop a PDF here or click to browse</p>
+              <p class="dropzone-hint">Handwritten or typed answer sheets · PDF only</p>
+            </div>
+          </label>
+
+          <button class="btn-primary" id="s-run" disabled>
+            <span class="btn-label">Grade sheet</span>
+            <span class="spinner" hidden></span>
+          </button>
+        </div>
+
+        <div class="card result-card" id="s-result">
+          <div class="placeholder">
+            <div class="placeholder-ring">📄</div>
+            <p>Upload a sheet to see an average score and a graded card for every question the model finds.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ MCQ GENERATOR ============================ -->
+    <section class="panel" data-panel="mcq">
+      <div class="grid">
+        <div class="card input-card">
+          <h2 class="card-title">Author MCQs</h2>
+          <p class="card-sub">Generate validated 4-option questions on any topic, at the difficulty you choose.</p>
+          <label class="field">
+            <span>Topic</span>
+            <input type="text" id="m-topic" placeholder="e.g. Software Development Life Cycle (SDLC)" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Difficulty</span>
+              <div class="select-wrap">
+                <select id="m-difficulty">
+                  <option value="easy">Easy</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+            </label>
+            <label class="field field-narrow">
+              <span>How many</span>
+              <input type="number" id="m-count" min="1" max="10" value="5" />
+            </label>
+          </div>
+          <button class="btn-primary" id="m-run">
+            <span class="btn-label">Generate questions</span>
+            <span class="spinner" hidden></span>
+          </button>
+        </div>
+
+        <div class="card result-card" id="m-result">
+          <div class="placeholder">
+            <div class="placeholder-ring">🧩</div>
+            <p>Fresh multiple-choice questions will appear here. Click an option to reveal the correct answer.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Marks-Grader · hybrid-retrieval grading engine</span>
+    <span class="dot">•</span>
+    <span id="health">connecting…</span>
+  </footer>
+
+  <!-- ============================ ADD TEXTBOOK MODAL ============================ -->
+  <div class="modal-backdrop" id="addModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Add a textbook">
+      <button class="modal-close" id="addClose" aria-label="Close">×</button>
+      <div class="modal-mark">＋</div>
+      <h2>Add a textbook</h2>
+      <p class="modal-sub">Upload a PDF and we'll build a gradable knowledge base from it — you can then grade answers and generate MCQs against your own material.</p>
+
+      <label class="field">
+        <span>Subject name</span>
+        <input type="text" id="add-name" placeholder="e.g. Operating Systems" />
+      </label>
+
+      <label class="dropzone" id="add-dropzone" for="add-file">
+        <input type="file" id="add-file" accept="application/pdf" hidden />
+        <div class="dropzone-inner">
+          <div class="dropzone-icon">📚</div>
+          <p class="dropzone-title" id="add-file-title">Drop a textbook PDF here or click to browse</p>
+          <p class="dropzone-hint">PDF only · a full textbook is fine</p>
+        </div>
+      </label>
+
+      <div class="build-note" id="add-status" hidden></div>
+
+      <button class="btn-primary" id="add-run" disabled>
+        <span class="btn-label">Create knowledge base</span>
+        <span class="spinner" hidden></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="alert"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

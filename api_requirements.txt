@@ -1,0 +1,5 @@
+# Extra dependencies for the web app (backend + served frontend).
+# The RAG pipeline's own deps are already in reqirements.txt.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
