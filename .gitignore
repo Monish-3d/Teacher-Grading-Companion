@@ -8,3 +8,7 @@ uploads/
 subjects.json
 *.png
 *.pdf
+.claude
+recognized_handwriting_large.txt
+recognized_handwriting_lines.txt
+recognized_handwriting.txt
